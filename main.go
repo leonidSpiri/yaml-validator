@@ -173,9 +173,8 @@ func validateObjectMeta(n *yaml.Node, v *validator) {
 
 	// namespace optional (string)
 	if _, ns := mapGet(n, "namespace"); ns != nil {
-		if _, ok := expectScalarString(ns, "metadata.namespace", v); !ok {
-			// тип уже залогирован
-		}
+		// Проверим тип/скалярность; сообщение об ошибке сформирует expectScalarString
+		_, _ = expectScalarString(ns, "metadata.namespace", v)
 	}
 
 	// labels optional (object of string:string)
