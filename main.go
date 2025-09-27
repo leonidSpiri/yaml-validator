@@ -30,9 +30,9 @@ func (v *validator) printAndExit() {
 	}
 	for _, e := range v.errs {
 		if e.line > 0 {
-			fmt.Fprintf(os.Stderr, "%s:%d %s\n", v.filename, e.line, e.message)
+			fmt.Fprintf(os.Stdout, "%s:%d %s\n", v.filename, e.line, e.message)
 		} else {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", v.filename, e.message)
+			fmt.Fprintf(os.Stdout, "%s: %s\n", v.filename, e.message)
 		}
 	}
 	os.Exit(1)
@@ -224,7 +224,7 @@ func validatePodOS(n *yaml.Node, v *validator) {
 	case yaml.ScalarNode:
 		val := strings.ToLower(strings.TrimSpace(n.Value))
 		if val != "linux" && val != "windows" {
-			v.addErr(n.Line, fmt.Sprintf("spec.os has unsupported value '%s'", n.Value))
+			v.addErr(n.Line, fmt.Sprintf("os has unsupported value '%s'", n.Value))
 		}
 	case yaml.MappingNode:
 		if _, name := mapGet(n, "name"); name == nil {
@@ -250,10 +250,13 @@ func validateContainer(n *yaml.Node, v *validator, seen map[string]bool) {
 	if name == nil {
 		v.addErr(0, "spec.containers[].name is required")
 	} else if s, ok := expectScalarString(name, "spec.containers[].name", v); ok {
-		if !reSnake.MatchString(s) {
+		if strings.TrimSpace(s) == "" {
+			// Пустая строка = требуемое поле отсутствует (ожидает тест)
+			v.addErr(name.Line, "name is required")
+		} else if !reSnake.MatchString(s) {
 			v.addErr(name.Line, fmt.Sprintf("spec.containers[].name has invalid format '%s'", s))
 		} else if seen[s] {
-			v.addErr(name.Line, fmt.Sprintf("spec.containers[].name has invalid format '%s'", s)) // формат сообщения про уникальность не задан — используем invalid format
+			v.addErr(name.Line, fmt.Sprintf("spec.containers[].name has invalid format '%s'", s)) // уникальность
 		} else {
 			seen[s] = true
 		}
@@ -265,13 +268,13 @@ func validateContainer(n *yaml.Node, v *validator, seen map[string]bool) {
 		v.addErr(0, "spec.containers[].image is required")
 	} else if s, ok := expectScalarString(image, "spec.containers[].image", v); ok {
 		if !strings.HasPrefix(s, "registry.bigbrother.io/") {
-			v.addErr(image.Line, fmt.Sprintf("spec.containers[].image has invalid format '%s'", s))
+			v.addErr(image.Line, fmt.Sprintf("image has invalid format '%s'", s))
 		} else {
 			// must contain tag after last slash
 			lastSlash := strings.LastIndex(s, "/")
 			lastColon := strings.LastIndex(s, ":")
 			if lastColon <= lastSlash || lastColon == len(s)-1 {
-				v.addErr(image.Line, fmt.Sprintf("spec.containers[].image has invalid format '%s'", s))
+				v.addErr(image.Line, fmt.Sprintf("image has invalid format '%s'", s))
 			}
 		}
 	}
@@ -346,20 +349,20 @@ func validateProbe(n *yaml.Node, v *validator, field string) {
 	// path required, absolute
 	_, path := mapGet(httpGet, "path")
 	if path == nil {
-		v.addErr(0, field+".httpGet.path is required")
-	} else if s, ok := expectScalarString(path, field+".httpGet.path", v); ok {
+		v.addErr(0, "path is required")
+	} else if s, ok := expectScalarString(path, "path", v); ok {
 		if !strings.HasPrefix(s, "/") || s == "" {
-			v.addErr(path.Line, fmt.Sprintf(field+".httpGet.path has invalid format '%s'", s))
+			v.addErr(path.Line, fmt.Sprintf("path has invalid format '%s'", s))
 		}
 	}
 
 	// port required int 1..65535
 	_, port := mapGet(httpGet, "port")
 	if port == nil {
-		v.addErr(0, field+".httpGet.port is required")
-	} else if val, ok := expectScalarInt(port, field+".httpGet.port", v); ok {
+		v.addErr(0, "port is required")
+	} else if val, ok := expectScalarInt(port, "port", v); ok {
 		if val <= 0 || val >= 65536 {
-			v.addErr(port.Line, field+".httpGet.port value out of range")
+			v.addErr(port.Line, "port value out of range")
 		}
 	}
 }
@@ -409,19 +412,15 @@ func validateResourceMap(n *yaml.Node, v *validator, field string) {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: yamlvalid <path-to-yaml>")
+		fmt.Fprintln(os.Stdout, "usage: yamlvalid <path-to-yaml>")
 		os.Exit(2)
 	}
 	path := os.Args[1]
-	// Нормализуем имя файла в выводе (как в примере: ./test.yaml)
-	filename := path
-	if !strings.HasPrefix(filename, ".") && !filepath.IsAbs(filename) {
-		filename = "./" + filename
-	}
+	filename := filepath.Base(path)
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", filename, err)
+		fmt.Fprintf(os.Stdout, "%s: %v\n", filename, err)
 		os.Exit(1)
 	}
 
@@ -430,9 +429,9 @@ func main() {
 		// Попробуем вытащить строку из ошибки yaml (если есть)
 		line := extractLine(err)
 		if line > 0 {
-			fmt.Fprintf(os.Stderr, "%s:%d %v\n", filename, line, err)
+			fmt.Fprintf(os.Stdout, "%s:%d %v\n", filename, line, err)
 		} else {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", filename, err)
+			fmt.Fprintf(os.Stdout, "%s: %v\n", filename, err)
 		}
 		os.Exit(1)
 	}
